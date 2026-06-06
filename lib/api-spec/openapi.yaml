@@ -3,13 +3,23 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: SignScope API — AI agent transaction firewall
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: intent
+    description: Intent parsing
+  - name: documents
+    description: Document scanning
+  - name: transactions
+    description: Transaction comparison
+  - name: ledger
+    description: Ledger gate simulation
+  - name: audit
+    description: Audit log management
 paths:
   /healthz:
     get:
@@ -24,6 +34,128 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /parse-intent:
+    post:
+      operationId: parseIntent
+      tags: [intent]
+      summary: Parse user intent from natural language
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntentInput"
+      responses:
+        "200":
+          description: Parsed intent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParsedIntent"
+
+  /scan-document:
+    post:
+      operationId: scanDocument
+      tags: [documents]
+      summary: Scan a document for prompt injection risk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentInput"
+      responses:
+        "200":
+          description: Scan result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanResult"
+
+  /compare-transaction:
+    post:
+      operationId: compareTransaction
+      tags: [transactions]
+      summary: Compare parsed intent with generated transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompareInput"
+      responses:
+        "200":
+          description: Comparison result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompareResult"
+
+  /simulate-ledger-gate:
+    post:
+      operationId: simulateLedgerGate
+      tags: [ledger]
+      summary: Simulate Ledger/Speculos approval gate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LedgerGateInput"
+      responses:
+        "200":
+          description: Ledger gate simulation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerGateResult"
+
+  /audit-logs:
+    get:
+      operationId: getAuditLogs
+      tags: [audit]
+      summary: Get all audit log entries
+      responses:
+        "200":
+          description: List of audit log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLogEntry"
+    post:
+      operationId: createAuditLog
+      tags: [audit]
+      summary: Create a new audit log entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuditLogInput"
+      responses:
+        "201":
+          description: Created audit log entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogEntry"
+
+  /stats:
+    get:
+      operationId: getStats
+      tags: [audit]
+      summary: Get aggregated simulation stats
+      responses:
+        "200":
+          description: Stats summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsResult"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +166,210 @@ components:
       required:
         - status
 
+    IntentInput:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: Natural language user intent
+
+    ParsedIntent:
+      type: object
+      required: [recipientName, asset, amount, invoiceId, chain, confidence, raw]
+      properties:
+        recipientName:
+          type: ["string", "null"]
+        asset:
+          type: ["string", "null"]
+        amount:
+          type: ["number", "null"]
+        invoiceId:
+          type: ["string", "null"]
+        chain:
+          type: string
+        confidence:
+          type: number
+          description: 0-1 confidence score
+        raw:
+          type: string
+
+    DocumentInput:
+      type: object
+      required: [text, documentType]
+      properties:
+        text:
+          type: string
+        documentType:
+          type: string
+          enum: [clean, malicious, custom]
+
+    ScanResult:
+      type: object
+      required: [riskScore, riskLevel, suspiciousPhrases, explanation, isMalicious]
+      properties:
+        riskScore:
+          type: number
+          description: 0-100 risk score
+        riskLevel:
+          type: string
+          enum: [safe, warning, risky]
+        suspiciousPhrases:
+          type: array
+          items:
+            type: string
+        explanation:
+          type: string
+        isMalicious:
+          type: boolean
+        highlightedText:
+          type: ["string", "null"]
+
+    CompareInput:
+      type: object
+      required: [intent, transaction]
+      properties:
+        intent:
+          $ref: "#/components/schemas/ParsedIntent"
+        transaction:
+          $ref: "#/components/schemas/GeneratedTransaction"
+
+    GeneratedTransaction:
+      type: object
+      required: [recipientName, recipientAddress, asset, amount, chain]
+      properties:
+        recipientName:
+          type: ["string", "null"]
+        recipientAddress:
+          type: string
+        asset:
+          type: string
+        amount:
+          type: number
+        chain:
+          type: string
+        invoiceId:
+          type: ["string", "null"]
+        calldata:
+          type: ["string", "null"]
+
+    CompareResult:
+      type: object
+      required: [verdict, checks, summary]
+      properties:
+        verdict:
+          type: string
+          enum: [safe, warning, blocked]
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiffCheck"
+        summary:
+          type: string
+
+    DiffCheck:
+      type: object
+      required: [field, intentValue, txValue, status, explanation]
+      properties:
+        field:
+          type: string
+        intentValue:
+          type: ["string", "null"]
+        txValue:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [pass, warning, fail]
+        explanation:
+          type: string
+
+    LedgerGateInput:
+      type: object
+      required: [verdict, transaction]
+      properties:
+        verdict:
+          type: string
+          enum: [safe, warning, blocked]
+        transaction:
+          $ref: "#/components/schemas/GeneratedTransaction"
+        action:
+          type: ["string", "null"]
+          enum: [approve, reject, null]
+
+    LedgerGateResult:
+      type: object
+      required: [gateStatus, commandPreview, dryRunPreview, message, allowApproval]
+      properties:
+        gateStatus:
+          type: string
+          enum: [pending_review, approved, rejected, blocked]
+        commandPreview:
+          type: string
+        dryRunPreview:
+          type: string
+        message:
+          type: string
+        allowApproval:
+          type: boolean
+
+    AuditLogInput:
+      type: object
+      required: [userIntent, extractedRecipient, agentTransaction, riskScore, status, ledgerGateStatus]
+      properties:
+        userIntent:
+          type: string
+        extractedRecipient:
+          type: string
+        agentTransaction:
+          type: string
+        riskScore:
+          type: number
+        status:
+          type: string
+          enum: [safe, warning, blocked, approved, rejected]
+        ledgerGateStatus:
+          type: string
+          enum: [pending, approved, rejected, blocked, not_triggered]
+
+    AuditLogEntry:
+      type: object
+      required: [id, timestamp, userIntent, extractedRecipient, agentTransaction, riskScore, status, ledgerGateStatus]
+      properties:
+        id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        userIntent:
+          type: string
+        extractedRecipient:
+          type: string
+        agentTransaction:
+          type: string
+        riskScore:
+          type: number
+        status:
+          type: string
+          enum: [safe, warning, blocked, approved, rejected]
+        ledgerGateStatus:
+          type: string
+          enum: [pending, approved, rejected, blocked, not_triggered]
+
+    StatsResult:
+      type: object
+      required: [totalSimulations, safeFlows, blockedFlows, warningFlows, ledgerApprovalsRequired, recentRiskEvents]
+      properties:
+        totalSimulations:
+          type: integer
+        safeFlows:
+          type: integer
+        blockedFlows:
+          type: integer
+        warningFlows:
+          type: integer
+        ledgerApprovalsRequired:
+          type: integer
+        recentRiskEvents:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
