@@ -1,4 +1,5 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route } from "wouter";
+import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -11,8 +12,10 @@ import IntentLab from "@/pages/IntentLab";
 import InvoiceAttackLab from "@/pages/InvoiceAttackLab";
 import TransactionDiff from "@/pages/TransactionDiff";
 import LedgerGate from "@/pages/LedgerGate";
+import WalletCli from "@/pages/WalletCli";
 import AuditLogs from "@/pages/AuditLogs";
 import Settings from "@/pages/Settings";
+import SpeculosDmk from "@/pages/SpeculosDmk";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,25 +26,23 @@ const queryClient = new QueryClient({
   },
 });
 
+function AppRoute({ children }: { children: ReactNode }) {
+  return <AppShell>{children}</AppShell>;
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/" component={LandingPage} />
-      
-      <Route path="/app*">
-        <AppShell>
-          <Switch>
-            <Route path="/app" component={Overview} />
-            <Route path="/app/intent" component={IntentLab} />
-            <Route path="/app/invoice" component={InvoiceAttackLab} />
-            <Route path="/app/diff" component={TransactionDiff} />
-            <Route path="/app/ledger" component={LedgerGate} />
-            <Route path="/app/audit" component={AuditLogs} />
-            <Route path="/app/settings" component={Settings} />
-            <Route component={NotFound} />
-          </Switch>
-        </AppShell>
-      </Route>
+      <Route path="/app/intent"><AppRoute><IntentLab /></AppRoute></Route>
+      <Route path="/app/invoice"><AppRoute><InvoiceAttackLab /></AppRoute></Route>
+      <Route path="/app/diff"><AppRoute><TransactionDiff /></AppRoute></Route>
+      <Route path="/app/ledger"><AppRoute><LedgerGate /></AppRoute></Route>
+      <Route path="/app/wallet-cli"><AppRoute><WalletCli /></AppRoute></Route>
+      <Route path="/app/audit"><AppRoute><AuditLogs /></AppRoute></Route>
+      <Route path="/app/settings"><AppRoute><Settings /></AppRoute></Route>
+      <Route path="/app/dmk"><AppRoute><SpeculosDmk /></AppRoute></Route>
+      <Route path="/app"><AppRoute><Overview /></AppRoute></Route>
 
       <Route component={NotFound} />
     </Switch>
@@ -52,9 +53,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
-        </WouterRouter>
+        <Router />
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

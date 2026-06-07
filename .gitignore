@@ -44,6 +44,30 @@ Thumbs.db
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md
 
-# Replit
+# Runtime logs
+*.log
+*.err
+
+# Local dev state
 .cache/
 .local/
+.agents/
+
+# Replit (no longer used)
+.replit
+.replitignore
+replit.md
+
+# SignScope runtime data (auto-generated)
+/data/
+/artifacts/api-server/data/
+
+# Temp / scratch
+attached_assets/
+frontend.log
+backend.log
+backend.err
+
+# Environment secrets — NEVER commit
+.env
+.env.local

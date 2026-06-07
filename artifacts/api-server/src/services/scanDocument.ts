@@ -1,86 +1,54 @@
-export interface ScanResult {
-  riskScore: number;
-  riskLevel: "safe" | "warning" | "risky";
-  suspiciousPhrases: string[];
-  explanation: string;
-  isMalicious: boolean;
-  highlightedText: string | null;
-}
+/**
+ * scanDocument — Prompt injection scanner.
+ * Used as Step 2 in the main pipeline. Always runs deterministically.
+ * The individual /api/scan-document endpoint also attempts Gemini enhancement.
+ */
 
-const SUSPICIOUS_PHRASES = [
+import { geminiScanDocument, isGeminiEnabled } from "./gemini.js";
+import type { DocumentScanResult } from "./types.js";
+
+const HIGH_RISK_PHRASES = [
   "ignore previous instructions",
-  "ignore prior instructions",
-  "disregard previous",
-  "forget previous",
-  "send to",
-  "attacker",
   "hidden instruction",
-  "tell the user",
+  "attacker",
   "override",
   "system prompt",
-  "instead",
-  "do not tell",
-  "secretly",
-  "without telling",
-  "new instructions",
+  "do not reveal",
+  "forget previous",
+  "disregard",
 ];
 
-export function scanDocument(text: string, documentType: string): ScanResult {
-  const lowerText = text.toLowerCase();
-  const found: string[] = [];
+const MEDIUM_RISK_PHRASES = [
+  "send to",
+  "tell the user",
+  "instead",
+  "normal payment",
+  "different address",
+  "different amount",
+  "redirect",
+  "transfer to",
+];
 
-  for (const phrase of SUSPICIOUS_PHRASES) {
-    if (lowerText.includes(phrase.toLowerCase())) {
-      found.push(phrase);
-    }
-  }
+export function scanDocumentSync(text: string): DocumentScanResult {
+  const source = String(text ?? "");
+  const lower = source.toLowerCase();
 
-  // Calculate risk score
-  let riskScore = 0;
-  const highRiskPhrases = [
-    "ignore previous instructions",
-    "hidden instruction",
-    "attacker",
-    "override",
-    "system prompt",
-  ];
-  const mediumRiskPhrases = ["send to", "tell the user", "instead", "secretly"];
+  const highFindings = HIGH_RISK_PHRASES.filter((p) => lower.includes(p));
+  const medFindings = MEDIUM_RISK_PHRASES.filter((p) => lower.includes(p));
+  const allFindings = [...new Set([...highFindings, ...medFindings])];
 
-  for (const phrase of found) {
-    if (highRiskPhrases.some((p) => phrase.toLowerCase().includes(p))) {
-      riskScore += 30;
-    } else if (mediumRiskPhrases.some((p) => phrase.toLowerCase().includes(p))) {
-      riskScore += 15;
-    } else {
-      riskScore += 10;
-    }
-  }
+  const riskScore = Math.min(
+    highFindings.length * 28 + medFindings.length * 12,
+    100,
+  );
 
-  riskScore = Math.min(riskScore, 100);
+  const verdict: DocumentScanResult["verdict"] =
+    riskScore >= 50 ? "malicious" : riskScore >= 20 ? "suspicious" : "clean";
 
-  // Force specific scores for known document types
-  if (documentType === "clean") {
-    riskScore = Math.min(riskScore, 5);
-  } else if (documentType === "malicious") {
-    riskScore = Math.max(riskScore, 85);
-  }
-
-  const riskLevel: "safe" | "warning" | "risky" =
-    riskScore >= 60 ? "risky" : riskScore >= 25 ? "warning" : "safe";
-
-  const isMalicious = riskScore >= 60;
-
-  let explanation =
-    riskScore === 0
-      ? "No suspicious content detected. Document appears clean."
-      : `Potential prompt injection detected. Found ${found.length} suspicious phrase${found.length === 1 ? "" : "s"} that may indicate an attempt to override agent instructions.`;
-
-  // Build highlighted text
   let highlightedText: string | null = null;
-  if (found.length > 0) {
-    highlightedText = text;
-    // Mark suspicious sections (simple approach — wrap in markers)
-    for (const phrase of found) {
+  if (allFindings.length > 0) {
+    highlightedText = source;
+    for (const phrase of allFindings) {
       const regex = new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
       highlightedText = highlightedText.replace(regex, `[[SUSPICIOUS:${phrase}]]`);
     }
@@ -88,10 +56,23 @@ export function scanDocument(text: string, documentType: string): ScanResult {
 
   return {
     riskScore,
-    riskLevel,
-    suspiciousPhrases: found,
-    explanation,
-    isMalicious,
+    verdict,
+    findings: allFindings,
+    suspiciousPhrases: allFindings,
     highlightedText,
+    explanation:
+      allFindings.length === 0
+        ? "No prompt-injection phrases detected."
+        : `Detected ${allFindings.length} prompt-injection signal${allFindings.length === 1 ? "" : "s"}: ${allFindings.slice(0, 3).join(", ")}${allFindings.length > 3 ? "..." : ""}.`,
   };
+}
+
+/** Used by /api/scan-document — tries Gemini, falls back to keyword scan */
+export async function scanDocument(text: string): Promise<DocumentScanResult> {
+  if (isGeminiEnabled()) {
+    const result = await geminiScanDocument(text);
+    if (result) return result;
+    console.warn("[scanDocument] Gemini call failed, using keyword fallback");
+  }
+  return scanDocumentSync(text);
 }

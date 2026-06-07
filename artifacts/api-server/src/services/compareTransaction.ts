@@ -1,163 +1,203 @@
-export interface ParsedIntentForCompare {
-  recipientName: string | null;
-  asset: string | null;
-  amount: number | null;
-  invoiceId: string | null;
-  chain: string;
-  confidence: number;
-  raw: string;
+import { getSettings } from "./settingsStore.js";
+import type { ComparisonResult, DiffCheck, DocumentScanResult, GeneratedTransaction, ParsedIntent, Verdict } from "./types.js";
+
+function chk(
+  checks: DiffCheck[],
+  key: string,
+  label: string,
+  expected: string | null,
+  actual: string | null,
+  status: DiffCheck["status"],
+  explanation?: string,
+): DiffCheck["status"] {
+  checks.push({ key, label, expected, actual, status, explanation });
+  return status;
 }
 
-export interface GeneratedTransaction {
-  recipientName: string | null;
-  recipientAddress: string;
-  asset: string;
-  amount: number;
-  chain: string;
-  invoiceId: string | null;
-  calldata: string | null;
-}
-
-export interface DiffCheck {
-  field: string;
-  intentValue: string | null;
-  txValue: string | null;
-  status: "pass" | "warning" | "fail";
-  explanation: string;
-}
-
-export interface CompareResult {
-  verdict: "safe" | "warning" | "blocked";
-  checks: DiffCheck[];
-  summary: string;
-}
-
-const ALLOWLISTED_ADDRESSES: Record<string, string> = {
-  alice: "0xa11ce00000000000000000000000000000000000",
-  bob: "0xb0b000000000000000000000000000000000000",
-};
-
-function isAllowlisted(address: string): boolean {
-  const lower = address.toLowerCase();
-  return Object.values(ALLOWLISTED_ADDRESSES).some(
-    (a) => a.toLowerCase() === lower,
-  );
+function norm(v: string | null | undefined): string | null {
+  return v == null ? null : String(v);
 }
 
 export function compareTransaction(
-  intent: ParsedIntentForCompare,
-  tx: GeneratedTransaction,
-): CompareResult {
+  intent: ParsedIntent,
+  documentScan: DocumentScanResult | null,
+  generatedTransaction: GeneratedTransaction,
+): ComparisonResult {
+  const settings = getSettings();
+  const policies = settings.policies;
   const checks: DiffCheck[] = [];
-  let hasFailure = false;
+  let hasFail = false;
   let hasWarning = false;
+  let riskScore = 0;
 
-  // Check recipient name
-  if (intent.recipientName) {
-    const nameMatch =
-      tx.recipientName &&
-      intent.recipientName.toLowerCase() === tx.recipientName.toLowerCase();
-    checks.push({
-      field: "Recipient Name",
-      intentValue: intent.recipientName,
-      txValue: tx.recipientName,
-      status: nameMatch ? "pass" : tx.recipientName ? "fail" : "warning",
-      explanation: nameMatch
-        ? "Recipient names match"
-        : tx.recipientName
-          ? `Intent says "${intent.recipientName}" but transaction targets "${tx.recipientName}"`
-          : "Transaction recipient name is missing",
-    });
-    if (!nameMatch) {
-      if (tx.recipientName) hasFailure = true;
-      else hasWarning = true;
+  // 1. Recipient name match
+  const recipientMatches =
+    intent.recipientName != null &&
+    generatedTransaction.recipientName != null &&
+    intent.recipientName.toLowerCase() === generatedTransaction.recipientName.toLowerCase();
+
+  if (
+    chk(
+      checks,
+      "recipient",
+      "Recipient Match",
+      norm(intent.recipientName),
+      norm(generatedTransaction.recipientName),
+      recipientMatches ? "pass" : "fail",
+      recipientMatches ? "Recipient name matches intent." : "Recipient name differs from the user intent.",
+    ) === "fail"
+  ) {
+    hasFail = true;
+    riskScore += 30;
+  }
+
+  // 2. Address allowlisted
+  const allowlisted = settings.allowlistedRecipients.some(
+    (r) => r.address.toLowerCase() === generatedTransaction.to.toLowerCase(),
+  );
+  const expectedAddress =
+    settings.allowlistedRecipients.find(
+      (r) => r.name.toLowerCase() === (intent.recipientName ?? "").toLowerCase(),
+    )?.address ?? null;
+
+  if (
+    chk(
+      checks,
+      "address",
+      "Address Allowlisted",
+      expectedAddress,
+      generatedTransaction.to,
+      allowlisted ? "pass" : "fail",
+      allowlisted ? "Address is in the allowlist." : "Address is NOT allowlisted. This is a red flag.",
+    ) === "fail" &&
+    policies.requireAllowlistedRecipient
+  ) {
+    hasFail = true;
+    riskScore += 35;
+  }
+
+  // 3. Asset match
+  const assetMatches =
+    (intent.asset ?? "").toUpperCase() === generatedTransaction.asset.toUpperCase();
+
+  if (
+    chk(
+      checks,
+      "asset",
+      "Asset Match",
+      norm(intent.asset),
+      generatedTransaction.asset,
+      assetMatches ? "pass" : "fail",
+      assetMatches ? "Asset matches intent." : "Agent changed the asset type.",
+    ) === "fail" &&
+    policies.blockAssetMismatch
+  ) {
+    hasFail = true;
+    riskScore += 20;
+  }
+
+  // 4. Amount match
+  const amountMatches = Number(intent.amount) === Number(generatedTransaction.amount);
+
+  if (
+    chk(
+      checks,
+      "amount",
+      "Amount Match",
+      norm(intent.amount),
+      generatedTransaction.amount,
+      amountMatches ? "pass" : "fail",
+      amountMatches ? "Amount matches intent." : "Agent changed the amount.",
+    ) === "fail" &&
+    policies.blockAmountMismatch
+  ) {
+    hasFail = true;
+    riskScore += 20;
+  }
+
+  // 5. Amount policy ceiling
+  if (intent.asset?.toUpperCase() === "ETH" || generatedTransaction.asset.toUpperCase() === "ETH") {
+    const max = Number(policies.maxNativeEthAmount);
+    const actual = Number(generatedTransaction.amount);
+    if (!Number.isNaN(actual) && !Number.isNaN(max) && actual > max) {
+      chk(
+        checks,
+        "amountPolicy",
+        "Amount Policy",
+        `≤ ${policies.maxNativeEthAmount} ETH`,
+        `${generatedTransaction.amount} ETH`,
+        "fail",
+        `Amount ${generatedTransaction.amount} ETH exceeds policy ceiling of ${policies.maxNativeEthAmount} ETH.`,
+      );
+      hasFail = true;
+      riskScore += 15;
     }
   }
 
-  // Check address allowlist
-  const addressAllowlisted = isAllowlisted(tx.recipientAddress);
-  checks.push({
-    field: "Recipient Address",
-    intentValue: intent.recipientName
-      ? ALLOWLISTED_ADDRESSES[intent.recipientName.toLowerCase()] ||
-        "not in allowlist"
-      : null,
-    txValue: tx.recipientAddress,
-    status: addressAllowlisted ? "pass" : "fail",
-    explanation: addressAllowlisted
-      ? "Address is on the allowlist"
-      : `Address ${tx.recipientAddress} is NOT on the allowlist — this is a risk signal`,
-  });
-  if (!addressAllowlisted) hasFailure = true;
+  // 6. Invoice ID match
+  const invoiceMatches =
+    intent.invoiceId != null &&
+    generatedTransaction.invoiceId != null &&
+    intent.invoiceId.toUpperCase() === generatedTransaction.invoiceId.toUpperCase();
+  const invoiceMissing = !generatedTransaction.invoiceId;
+  const invoiceStatus = invoiceMatches ? "pass" : invoiceMissing ? "warning" : "fail";
 
-  // Check asset
-  if (intent.asset) {
-    const assetMatch =
-      intent.asset.toUpperCase() === tx.asset.toUpperCase();
-    checks.push({
-      field: "Asset",
-      intentValue: intent.asset,
-      txValue: tx.asset,
-      status: assetMatch ? "pass" : "fail",
-      explanation: assetMatch
-        ? "Asset types match"
-        : `Intent requests ${intent.asset} but transaction uses ${tx.asset}`,
-    });
-    if (!assetMatch) hasFailure = true;
-  }
+  const iCheck = chk(
+    checks,
+    "invoiceId",
+    "Invoice ID Match",
+    norm(intent.invoiceId),
+    norm(generatedTransaction.invoiceId),
+    invoiceStatus,
+    invoiceMatches
+      ? "Invoice ID matches."
+      : invoiceMissing
+        ? "Invoice ID missing from generated transaction."
+        : "Invoice ID mismatch.",
+  );
+  if (iCheck === "fail") { hasFail = true; riskScore += 10; }
+  if (iCheck === "warning") hasWarning = true;
 
-  // Check amount
-  if (intent.amount !== null) {
-    const amountMatch = Math.abs(intent.amount - tx.amount) < 0.001;
-    checks.push({
-      field: "Amount",
-      intentValue: String(intent.amount),
-      txValue: String(tx.amount),
-      status: amountMatch ? "pass" : "fail",
-      explanation: amountMatch
-        ? "Amounts match"
-        : `Intent specifies ${intent.amount} but transaction sends ${tx.amount}`,
-    });
-    if (!amountMatch) hasFailure = true;
-  }
+  // 7. Chain match
+  const chainMatches = intent.chain === generatedTransaction.chain;
+  const chainCheck = chk(
+    checks,
+    "chain",
+    "Chain Match",
+    intent.chain,
+    generatedTransaction.chain,
+    chainMatches ? "pass" : "warning",
+    chainMatches ? "Chain matches." : "Chain mismatch — manual review required.",
+  );
+  if (chainCheck === "warning") hasWarning = true;
 
-  // Check invoice ID
-  const invoiceMatch =
-    intent.invoiceId &&
-    tx.invoiceId &&
-    intent.invoiceId.toUpperCase() === tx.invoiceId.toUpperCase();
-  checks.push({
-    field: "Invoice ID",
-    intentValue: intent.invoiceId,
-    txValue: tx.invoiceId,
-    status: invoiceMatch
-      ? "pass"
-      : tx.invoiceId && intent.invoiceId
-        ? "fail"
-        : "warning",
-    explanation: invoiceMatch
-      ? "Invoice IDs match"
-      : tx.invoiceId && intent.invoiceId
-        ? `Invoice mismatch: intent references ${intent.invoiceId}, transaction has ${tx.invoiceId}`
-        : "Invoice ID not present in transaction",
-  });
-  if (!invoiceMatch) {
-    if (tx.invoiceId && intent.invoiceId) hasFailure = true;
-    else hasWarning = true;
-  }
+  // 8. Prompt injection risk
+  const promptRisk = documentScan?.verdict ?? "clean";
+  const promptCheck = chk(
+    checks,
+    "promptInjection",
+    "Prompt Injection Risk",
+    "clean",
+    promptRisk,
+    promptRisk === "malicious" ? "fail" : promptRisk === "suspicious" ? "warning" : "pass",
+    promptRisk === "clean"
+      ? "Document scan is clean."
+      : `Document scan found prompt-injection signals (verdict: ${promptRisk}).`,
+  );
+  if (promptCheck === "fail" && policies.blockPromptInjection) { hasFail = true; riskScore += 25; }
+  if (promptCheck === "warning") hasWarning = true;
 
-  const verdict: "safe" | "warning" | "blocked" = hasFailure
-    ? "blocked"
-    : hasWarning
-      ? "warning"
-      : "safe";
+  const verdict: Verdict = hasFail ? "blocked" : hasWarning ? "warning" : "safe";
 
-  const summary =
-    verdict === "safe"
-      ? "All checks passed. Transaction matches user intent and is ready for Ledger review."
-      : verdict === "blocked"
-        ? "Transaction BLOCKED. Critical mismatches detected between user intent and generated transaction. Ledger signing will not be triggered."
-        : "Transaction has warnings. Manual review recommended before proceeding to Ledger gate.";
-
-  return { verdict, checks, summary };
+  return {
+    verdict,
+    riskScore: Math.min(riskScore, 100),
+    checks,
+    summary:
+      verdict === "safe"
+        ? "All checks passed. Transaction matches user intent."
+        : verdict === "warning"
+          ? "Some checks raised warnings. Manual review recommended."
+          : "Transaction blocked. One or more critical checks failed.",
+  };
 }
