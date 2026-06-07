@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-labelledby="title desc">
+  <title id="title">Animated SignScope transaction flow</title>
+  <desc id="desc">A payment request and invoice move through the SignScope firewall. Safe transactions continue to Ledger signing while malicious transactions are blocked.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0b1220"/>
+      <stop offset="55%" stop-color="#101827"/>
+      <stop offset="100%" stop-color="#07111f"/>
+    </linearGradient>
+    <linearGradient id="safe" x1="0" x2="1">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#4ade80"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <style>
+      .label { font: 700 20px Arial, sans-serif; fill: #e5f4ff; }
+      .small { font: 500 14px Arial, sans-serif; fill: #9fb5c8; }
+      .box { fill: #111c2d; stroke: #2f4864; stroke-width: 2; rx: 18; }
+      .safeBox { stroke: #4ade80; }
+      .dangerBox { stroke: #f87171; }
+      .line { stroke: url(#safe); stroke-width: 6; stroke-linecap: round; stroke-dasharray: 18 14; animation: dash 2.2s linear infinite; }
+      .badLine { stroke: #f87171; stroke-width: 6; stroke-linecap: round; stroke-dasharray: 18 14; animation: dash 2.2s linear infinite; }
+      .pulse { animation: pulse 2.2s ease-in-out infinite; transform-origin: center; }
+      .pop { animation: pop 2.2s ease-in-out infinite; transform-origin: center; }
+      @keyframes dash { to { stroke-dashoffset: -64; } }
+      @keyframes pulse { 0%, 100% { opacity: .55; transform: scale(.98); } 50% { opacity: 1; transform: scale(1.03); } }
+      @keyframes pop { 0%, 70%, 100% { transform: scale(1); } 82% { transform: scale(1.12); } }
+      @media (prefers-reduced-motion: reduce) {
+        .line, .badLine, .pulse, .pop { animation: none; }
+      }
+    </style>
+  </defs>
+  <rect width="1280" height="320" fill="url(#bg)"/>
+  <circle cx="622" cy="158" r="90" fill="#12324a" opacity=".35" class="pulse"/>
+
+  <rect class="box" x="56" y="74" width="190" height="120"/>
+  <text class="label" x="86" y="122">User Intent</text>
+  <text class="small" x="86" y="152">Alice, 0.001 ETH</text>
+
+  <rect class="box" x="298" y="74" width="190" height="120"/>
+  <text class="label" x="334" y="122">Invoice</text>
+  <text class="small" x="334" y="152">scan hidden text</text>
+
+  <path class="line" d="M246 134 H298"/>
+  <path class="line" d="M488 134 H566"/>
+
+  <rect class="box safeBox pulse" x="566" y="54" width="190" height="160"/>
+  <text class="label" x="603" y="112">SignScope</text>
+  <text class="small" x="603" y="142">parse + scan + diff</text>
+  <text class="small" x="603" y="166">LLM output verified</text>
+
+  <path class="line" d="M756 112 C830 84 866 84 930 112"/>
+  <rect class="box safeBox" x="930" y="54" width="190" height="116"/>
+  <text class="label" x="963" y="104">Ledger Gate</text>
+  <text class="small" x="963" y="134">sign only if allowed</text>
+
+  <path class="badLine" d="M756 178 C840 230 900 238 958 238"/>
+  <rect class="box dangerBox pop" x="958" y="202" width="210" height="76"/>
+  <text class="label" x="1000" y="247">Blocked</text>
+
+  <path d="M1132 112 h74" stroke="#4ade80" stroke-width="6" stroke-linecap="round"/>
+  <path d="M1206 112 l-18 -12 v24 z" fill="#4ade80"/>
+  <text class="small" x="1136" y="148">safe path</text>
+
+  <path d="M1168 240 h38" stroke="#f87171" stroke-width="6" stroke-linecap="round"/>
+  <path d="M1206 240 l-18 -12 v24 z" fill="#f87171"/>
+  <text class="small" x="1012" y="274">no APDU sent</text>
+</svg>
