@@ -43,6 +43,10 @@ flowchart LR
 
 ## Architecture
 
+The full system design image is included below for a quick visual read of how the frontend, backend, AI layer, security checks, and Ledger signing path fit together.
+
+![SignScope system design](docs/assets/systemdesign.png)
+
 ```mermaid
 flowchart TB
   subgraph Frontend["React + Vite frontend"]
